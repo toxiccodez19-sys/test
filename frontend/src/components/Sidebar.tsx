@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -12,7 +12,11 @@ import {
   Zap,
 } from "lucide-react";
 import { Task, Agent } from "@/types";
-import { listTasks, getAgents, deleteTask } from "@/lib/api";
+import { listTasks, getAgents, deleteTask, ApiError } from "@/lib/api";
+
+const SIDEBAR_POLL_INTERVAL = 5000;
+const MAX_POLL_INTERVAL = 60000;
+const BACKOFF_MULTIPLIER = 2;
 
 interface SidebarProps {
   onNewTask: () => void;
@@ -40,13 +44,22 @@ export default function Sidebar({ onNewTask, onSelectTask, selectedTaskId }: Sid
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activeSection, setActiveSection] = useState<string>("history");
+  const errorCountRef = useRef(0);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchTasks = async () => {
     try {
       const data = await listTasks();
       setTasks(data.tasks || []);
-    } catch {
-      // API not available
+      errorCountRef.current = 0;
+    } catch (err) {
+      if (err instanceof ApiError && err.isRateLimited) {
+        errorCountRef.current += 1;
+        console.warn(
+          `Rate limited fetching tasks list. Backing off (attempt ${errorCountRef.current}).`,
+        );
+      }
+      // API not available or rate limited
     }
   };
 
@@ -62,8 +75,29 @@ export default function Sidebar({ onNewTask, onSelectTask, selectedTaskId }: Sid
   useEffect(() => {
     fetchTasks();
     fetchAgents();
-    const interval = setInterval(fetchTasks, 5000);
-    return () => clearInterval(interval);
+
+    let stopped = false;
+    const schedulePoll = () => {
+      if (stopped) return;
+      const delay = errorCountRef.current > 0
+        ? Math.min(
+            SIDEBAR_POLL_INTERVAL * Math.pow(BACKOFF_MULTIPLIER, errorCountRef.current),
+            MAX_POLL_INTERVAL,
+          )
+        : SIDEBAR_POLL_INTERVAL;
+      pollTimeoutRef.current = setTimeout(async () => {
+        await fetchTasks();
+        schedulePoll();
+      }, delay);
+    };
+    schedulePoll();
+
+    return () => {
+      stopped = true;
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleDelete = async (taskId: string, e: React.MouseEvent) => {
