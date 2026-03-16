@@ -107,6 +107,19 @@ export function useStore() {
     saveToStorage("pos-tables", tbls);
   }, []);
 
+  const updateTableById = useCallback(
+    (id: string, status: Table["status"]) => {
+      setTables((prev) => {
+        const updated = prev.map((t) =>
+          t.id === id ? { ...t, status } : t
+        );
+        saveToStorage("pos-tables", updated);
+        return updated;
+      });
+    },
+    []
+  );
+
   const persistOrders = useCallback((ords: Order[]) => {
     setOrders(ords);
     saveToStorage("pos-orders", ords);
@@ -256,6 +269,20 @@ export function useStore() {
     [orders, persistOrders]
   );
 
+  const startAllOrderItems = useCallback(
+    (orderId: string) => {
+      const updated = orders.map((order) => {
+        if (order.id !== orderId) return order;
+        const newItems = order.items.map((item) =>
+          item.status === "pending" ? { ...item, status: "preparing" as const } : item
+        );
+        return { ...order, items: newItems };
+      });
+      persistOrders(updated);
+    },
+    [orders, persistOrders]
+  );
+
   const completeOrder = useCallback(
     (orderId: string, paymentMethod: "cash" | "card" | "split") => {
       let tableId = "";
@@ -273,11 +300,11 @@ export function useStore() {
       if (tableId) {
         updateTableStatus(tableId, "cleaning");
         setTimeout(() => {
-          updateTableStatus(tableId, "available");
+          updateTableById(tableId, "available");
         }, 3000);
       }
     },
-    [orders, persistOrders, updateTableStatus]
+    [orders, persistOrders, updateTableStatus, updateTableById]
   );
 
   const cancelOrder = useCallback(
@@ -332,6 +359,7 @@ export function useStore() {
     addItemToOrder,
     removeItemFromOrder,
     updateOrderItemStatus,
+    startAllOrderItems,
     completeOrder,
     cancelOrder,
   };

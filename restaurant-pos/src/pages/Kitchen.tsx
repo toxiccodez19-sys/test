@@ -9,7 +9,7 @@ interface KitchenProps {
 }
 
 export function Kitchen({ store }: KitchenProps) {
-  const { activeOrders, updateOrderItemStatus } = store;
+  const { activeOrders, updateOrderItemStatus, startAllOrderItems } = store;
 
   const pendingOrders = activeOrders.filter((o) =>
     o.items.some((i) => i.status === "pending")
@@ -175,17 +175,7 @@ export function Kitchen({ store }: KitchenProps) {
                     <Button
                       className="mt-2 w-full"
                       variant="warning"
-                      onClick={() => {
-                        order.items.forEach((item, idx) => {
-                          if (item.status === "pending") {
-                            updateOrderItemStatus(
-                              order.id,
-                              idx,
-                              "preparing"
-                            );
-                          }
-                        });
-                      }}
+                      onClick={() => startAllOrderItems(order.id)}
                     >
                       Start All Items
                     </Button>
